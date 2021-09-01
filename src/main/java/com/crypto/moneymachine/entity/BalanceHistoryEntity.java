@@ -1,5 +1,6 @@
 package com.crypto.moneymachine.entity;
 
+import com.crypto.moneymachine.util.Currency;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -10,8 +11,9 @@ import javax.persistence.Entity;
 import javax.persistence.GeneratedValue;
 import javax.persistence.GenerationType;
 import javax.persistence.Id;
+import javax.persistence.JoinColumn;
+import javax.persistence.ManyToOne;
 import javax.persistence.Table;
-import java.util.Currency;
 import java.util.UUID;
 
 @Entity
@@ -27,7 +29,13 @@ public class BalanceHistoryEntity extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.AUTO)
     UUID id;
 
-    Currency currency;
+    @ManyToOne
+    @JoinColumn(name = "currency")
+    CurrencyEntity currency;
     Double amount;
 
+    public BalanceHistoryEntity(CurrencyEntity currency, Double amount) {
+        this.currency = currency;
+        this.amount = amount;
+    }
 }

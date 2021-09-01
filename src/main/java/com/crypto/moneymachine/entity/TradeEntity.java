@@ -1,5 +1,7 @@
 package com.crypto.moneymachine.entity;
 
+import com.crypto.moneymachine.util.OrderStatus;
+import com.crypto.moneymachine.util.TradeDecision;
 import com.crypto.moneymachine.util.TradeType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -35,10 +37,10 @@ public class TradeEntity extends BaseEntity {
 
     @OneToMany
     @JoinColumn(name = "trade_id")
-    List<Object> orders;
+    List<OrderEntity> orders;
 
     @Column(name = "type")
-    TradeType tradeType;
+    String tradeType;
 
     @ManyToOne
     @JoinColumn(name = "pair")
@@ -63,11 +65,21 @@ public class TradeEntity extends BaseEntity {
     Double quantity;
 
     @Column(name = "executed_quantity")
-    Double executed_quantity;
+    Double executedQuantity;
 
     Double profit;
 
     @Column(name = "percent_profit")
-    Double percent_profit;
+    Double percentProfit;
+
+    @Column(name = "order_id")
+    String orderId;
+
+    @Column(name = "side")
+    String side;
+
+    @Column(name = "status")
+    String status;
+
 
 }

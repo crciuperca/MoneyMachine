@@ -3,7 +3,7 @@ package com.crypto.moneymachine.entity;
 import javax.persistence.Column;
 import java.util.Date;
 
-@MappedSuperclass
+//@MappedSuperclass
 public abstract class BaseEntity {
 
     @Column(name = "created_at")

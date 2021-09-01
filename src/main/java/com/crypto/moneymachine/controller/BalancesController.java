@@ -1,15 +1,17 @@
 package com.crypto.moneymachine.controller;
 
 import com.crypto.moneymachine.connection.ConnectionManager;
+import com.crypto.moneymachine.entity.BalanceHistoryEntity;
 import com.crypto.moneymachine.pojo.CurrentBalance;
 import com.crypto.moneymachine.service.BalancesService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.EnableScheduling;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/balances")
@@ -46,9 +48,14 @@ public class BalancesController {
         return balancesService.getBalanceInEuros(connectionManager.getClient());
     }
 
-    @Scheduled(cron = "0 * * * * *")
+    @GetMapping("/allBalances")
+    public List<BalanceHistoryEntity> getAllBalanceHistory() {
+        return balancesService.calculateAllBalances(connectionManager.getClient());
+    }
+
+    //    @Scheduled(cron = "0 * * * * *")
+    @GetMapping("/persist")
     public void persistBalanceInEUR() {
-//        System.out.println(balancesService.getBalanceInEuros(connectionManager.getClient()));
         balancesService.persistBalances(connectionManager.getClient());
     }
 

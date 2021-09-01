@@ -3,9 +3,12 @@ package com.crypto.moneymachine.service;
 import com.binance.api.client.BinanceApiRestClient;
 import com.binance.api.client.domain.account.AssetBalance;
 import com.binance.api.client.domain.market.TickerPrice;
+import com.crypto.moneymachine.entity.BalanceHistoryEntity;
 import com.crypto.moneymachine.entity.CurrencyEntity;
 import com.crypto.moneymachine.pojo.CurrentBalance;
+import com.crypto.moneymachine.repository.BalanceHistoryRepository;
 import com.crypto.moneymachine.repository.CurrencyRepository;
+import com.crypto.moneymachine.util.Currency;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -17,6 +20,8 @@ public class BalancesService {
 
     @Autowired
     CurrencyRepository currencyRepository;
+    @Autowired
+    BalanceHistoryRepository balanceHistoryRepository;
 
     public BalancesService(CurrencyRepository currencyRepository) {
         this.currencyRepository = currencyRepository;
@@ -70,16 +75,52 @@ public class BalancesService {
         return totalUSDT/eurUSDTPrice;
     }
 
+    public List<BalanceHistoryEntity> calculateAllBalances(BinanceApiRestClient client) {
+        return calculateAllBalances(client, client.getAccount().getBalances().stream()
+                .filter(asset -> (Double.parseDouble(asset.getFree()) + Double.parseDouble(asset.getLocked())) > 0)
+                .collect(Collectors.toList()));
+    }
+
+    public List<BalanceHistoryEntity> calculateAllBalances(BinanceApiRestClient client, List<AssetBalance> nonEmptyAssets) {
+        List<TickerPrice> allPrices = client.getAllPrices();
+        List<BalanceHistoryEntity> nonEmptyBalances = nonEmptyAssets.stream()
+                .filter(asset -> (Double.parseDouble(asset.getFree()) + Double.parseDouble(asset.getLocked())) > 0)
+                .map(asset -> new BalanceHistoryEntity(currencyRepository.findById(asset.getAsset()).get(), (Double.parseDouble(asset.getFree()) + Double.parseDouble(asset.getLocked()))))
+                .collect(Collectors.toList());
+
+        Double eurUSDTPrice =  Double.parseDouble(allPrices.stream().filter(price -> price.getSymbol().equals("EURUSDT")).findFirst().get().getPrice());
+
+        Double totalUSDT = nonEmptyBalances.stream().map(balance -> {
+            if ("USDT".equals(balance.getCurrency().getSymbol())) {
+                System.out.println(balance.getAmount() + "USDT");
+                return balance.getAmount();
+            }
+            String pair = balance.getCurrency().getSymbol() + "USDT";
+            TickerPrice emptyTicker = new TickerPrice();
+            emptyTicker.setPrice("0");
+            Double currencyPriceInUSDT = Double.parseDouble(allPrices.stream().filter(price -> price.getSymbol().equals(pair)).findFirst().orElse(emptyTicker).getPrice());
+            System.out.println(balance.getCurrency() + "" + balance.getAmount() + " -> " + (balance.getAmount() * currencyPriceInUSDT) + "USDT");
+            return balance.getAmount() * currencyPriceInUSDT;
+        }).reduce(0d, Double::sum);
+
+        nonEmptyBalances.add(new BalanceHistoryEntity(currencyRepository.findById(Currency.EUR_EQUIVALENT.name()).get(), totalUSDT / eurUSDTPrice));
+        return nonEmptyBalances;
+    }
+
     public void persistBalances(BinanceApiRestClient client) {
         List<AssetBalance> assets = client.getAccount().getBalances();
         List<AssetBalance> nonEmptyBalances = assets.stream().filter(asset -> (Double.parseDouble(asset.getFree()) + Double.parseDouble(asset.getLocked())) > 0).collect(Collectors.toList());
-        persistNewCurrencies(nonEmptyBalances);
+        if (!nonEmptyBalances.isEmpty()) {
+            persistNewCurrencies(nonEmptyBalances);
+            balanceHistoryRepository.saveAll(calculateAllBalances(client, nonEmptyBalances));
+        }
+
     }
 
     public void persistNewCurrencies(List<AssetBalance> nonEmptyBalances) {
         List<String> savedCurrencies = currencyRepository.findAll().stream().map(currencyEntity -> currencyEntity != null ? currencyEntity.getSymbol() : null).filter(symbol -> symbol != null).collect(Collectors.toList());
         List<CurrencyEntity> newCurrencies = nonEmptyBalances.stream().map(assetBalance -> assetBalance.getAsset()).filter(symbol -> !savedCurrencies.contains(symbol)).map(symbol -> new CurrencyEntity(symbol)).collect(Collectors.toList());
-        System.out.println("Saving new currencies: " + newCurrencies);
+//        System.out.println("Saving new currencies: " + newCurrencies);
         currencyRepository.saveAll(newCurrencies);
     }
 

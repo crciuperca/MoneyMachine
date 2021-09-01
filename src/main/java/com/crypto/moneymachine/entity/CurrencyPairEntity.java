@@ -8,6 +8,8 @@ import lombok.ToString;
 
 import javax.persistence.Entity;
 import javax.persistence.Id;
+import javax.persistence.JoinColumn;
+import javax.persistence.ManyToOne;
 import javax.persistence.Table;
 
 @Entity
@@ -21,6 +23,12 @@ public class CurrencyPairEntity extends BaseEntity {
 
     @Id
     String symbol;
-    String first;
-    String second;
+
+    @ManyToOne
+    @JoinColumn(name = "first")
+    CurrencyEntity first;
+
+    @ManyToOne
+    @JoinColumn(name = "second")
+    CurrencyEntity second;
 }
