@@ -4,6 +4,8 @@ import com.crypto.moneymachine.connection.ConnectionManager;
 import com.crypto.moneymachine.entity.BalanceHistoryEntity;
 import com.crypto.moneymachine.pojo.CurrentBalance;
 import com.crypto.moneymachine.service.BalancesService;
+import lombok.AllArgsConstructor;
+import lombok.NoArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -12,10 +14,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/balances")
 @EnableScheduling
+@AllArgsConstructor
+@NoArgsConstructor
 public class BalancesController {
 
     @Autowired
@@ -29,7 +34,7 @@ public class BalancesController {
     }
 
     @GetMapping("/main")
-    public String getMainBalances() {
+    public Map<String, String> getMainBalances() {
         return balancesService.showMainBalances(connectionManager.getClient());
     }
 

@@ -9,6 +9,9 @@ import com.crypto.moneymachine.connection.ConnectionManager;
 import com.crypto.moneymachine.pojo.MyCandlestick;
 import com.crypto.moneymachine.repository.CurrencyRepository;
 import com.crypto.moneymachine.repository.TradeRepository;
+import com.crypto.moneymachine.util.AvgQueue;
+import lombok.AllArgsConstructor;
+import lombok.NoArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.util.Pair;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,6 +26,8 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/test")
+@AllArgsConstructor
+@NoArgsConstructor
 public class TestController {
 
     @Autowired
@@ -31,6 +36,7 @@ public class TestController {
     CurrencyRepository currencyRepository;
     @Autowired
     TradeRepository tradeRepository;
+    AvgQueue avgQueue = new AvgQueue(14);
 
     @GetMapping("/get/{id}")
     public String testGet(@PathVariable int id) {
@@ -71,7 +77,7 @@ public class TestController {
     public String getCandlesticks() {
 
         long fifteenHoursMillis = 1000 * 60 * 900;
-        return connectionManager.getClient().getCandlestickBars("EGLDUSDT", CandlestickInterval.ONE_MINUTE, 9000, (new Date()).getTime() - fifteenHoursMillis, (new Date()).getTime()).stream().map(p -> p.toString()).collect(Collectors.joining("\n"));
+        return connectionManager.getClient().getCandlestickBars("BNBUSDT", CandlestickInterval.ONE_MINUTE, 9000, (new Date()).getTime() - fifteenHoursMillis, (new Date()).getTime()).stream().map(p -> p.toString()).collect(Collectors.joining("\n"));
     }
 
     @GetMapping("/getTrade")
@@ -80,12 +86,19 @@ public class TestController {
 
         return tradeRepository.getNewestOpenTrade("EGLDUSDT").getPrice().toString();
     }
+
     @GetMapping("/getLastTrade")
     public String getLastTrade() {
         BinanceApiRestClient restClient = connectionManager.getClient();
         List<Trade> myTrades = restClient.getMyTrades("EGLDUSDT");
         Trade lastTrade = myTrades.get(myTrades.size() - 1);
         return lastTrade.toString();
+    }
+
+    @GetMapping("/queue/{number}")
+    public void testQueue(@PathVariable Double number) {
+        avgQueue.add(number);
+        System.out.println("Added " + number + " AVG = " + avgQueue.getAverage());
     }
 
 //    @GetMapping("/candles/all")

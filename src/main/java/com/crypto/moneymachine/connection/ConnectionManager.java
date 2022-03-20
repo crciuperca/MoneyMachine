@@ -2,9 +2,11 @@ package com.crypto.moneymachine.connection;
 
 import com.binance.api.client.BinanceApiClientFactory;
 import com.binance.api.client.BinanceApiRestClient;
+import lombok.NoArgsConstructor;
 import org.springframework.context.annotation.PropertySource;
 
 @PropertySource("classpath:connection.properties")
+@NoArgsConstructor
 public class ConnectionManager {
     private static ConnectionManager instance;
     private static BinanceApiClientFactory clientFactory;

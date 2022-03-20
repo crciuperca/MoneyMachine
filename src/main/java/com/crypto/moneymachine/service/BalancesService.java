@@ -9,13 +9,20 @@ import com.crypto.moneymachine.pojo.CurrentBalance;
 import com.crypto.moneymachine.repository.BalanceHistoryRepository;
 import com.crypto.moneymachine.repository.CurrencyRepository;
 import com.crypto.moneymachine.util.Currency;
+import lombok.AllArgsConstructor;
+import lombok.NoArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Scanner;
 import java.util.stream.Collectors;
 
 @Service
+@AllArgsConstructor
+@NoArgsConstructor
 public class BalancesService {
 
     @Autowired
@@ -32,9 +39,15 @@ public class BalancesService {
         return assets.stream().map(a -> a.getAsset() + ": " + a.getFree() + " [" + a.getLocked() + "]").collect(Collectors.joining("\n"));
     }
 
-    public String showMainBalances(BinanceApiRestClient client) {
+    public Map<String, String> showMainBalances(BinanceApiRestClient client) {
         List<AssetBalance> assets = client.getAccount().getBalances();
-        return assets.stream().filter(a -> "EGLD".equals(a.getAsset()) || "USDT".equals(a.getAsset()) || "BNB".equals(a.getAsset()) || "EUR".equals(a.getAsset())).map(a -> a.getAsset() + ": " + a.getFree() + " [" + a.getLocked() + "]").collect(Collectors.joining("\n"));
+
+        Map<String, String> wallet = new HashMap<>();
+        assets.stream()
+                .filter(a -> "EGLD".equals(a.getAsset()) || "USDT".equals(a.getAsset()) || "BNB".equals(a.getAsset()) || "EUR".equals(a.getAsset()))
+                .filter(a -> !("0.00000000".equals(a.getFree()) && "0.00000000".equals(a.getLocked())))
+                .forEach(a -> wallet.put(a.getAsset(), String.format("%s [%s]", a.getFree(), a.getLocked())));
+        return wallet;
     }
 
     public String showSpecificBalance(BinanceApiRestClient client, String currency) {

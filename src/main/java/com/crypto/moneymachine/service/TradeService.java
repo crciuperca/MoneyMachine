@@ -6,7 +6,9 @@ import com.binance.api.client.domain.OrderType;
 import com.binance.api.client.domain.TimeInForce;
 import com.binance.api.client.domain.account.NewOrder;
 import com.binance.api.client.domain.account.NewOrderResponse;
+import com.binance.api.client.domain.account.Order;
 import com.binance.api.client.domain.account.Trade;
+import com.binance.api.client.domain.account.request.CancelOrderRequest;
 import com.binance.api.client.domain.account.request.OrderRequest;
 import com.binance.api.client.domain.market.CandlestickInterval;
 import com.crypto.moneymachine.entity.CurrencyPairEntity;
@@ -15,6 +17,7 @@ import com.crypto.moneymachine.pojo.MyCandlestick;
 import com.crypto.moneymachine.repository.CurrencyPairRepository;
 import com.crypto.moneymachine.repository.CurrencyRepository;
 import com.crypto.moneymachine.repository.TradeRepository;
+import com.crypto.moneymachine.util.AvgQueue;
 import com.crypto.moneymachine.util.OrderStatus;
 import com.crypto.moneymachine.util.TradeDecision;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,6 +41,7 @@ public class TradeService {
     int macdPeriod1 = 12;
     int macdPeriod2 = 26;
     int signalPeriod = 9;
+    int rsiPeriod = 14;
     //    Double profitLimit = 1.01d;
 //    Double stopLossLimit = 0.995d;
 //    Double buyQuantityUSDT = 15d;
@@ -67,6 +71,44 @@ public class TradeService {
         return client.newOrder(order);
     }
 
+    public void buyMaxCurrencyAtMarketPriceAndSellAtProfit(BinanceApiRestClient client, String pair, Double profitPercent) {
+        String availableUSDTString = client.getAccount().getBalances().stream().filter(b -> b.getAsset().equals("USDT")).findFirst().get().getFree();
+        availableUSDTString = availableUSDTString.split(".")[0] + "." + availableUSDTString.split(".")[1].substring(0, 4);
+        NewOrder order = new NewOrder(pair, OrderSide.BUY, OrderType.MARKET, TimeInForce.GTC, availableUSDTString);
+        try {
+            Thread.sleep(1000);
+        } catch (Exception e) {
+
+        }
+        Trade buyTrade = getLastTrade(client, pair);
+        Double soldAtPrice = Double.parseDouble(buyTrade.getPrice());
+        Double sellPrice = soldAtPrice * (1d + profitPercent);
+        String sellPriceString = ("" + sellPrice);
+        sellPriceString = sellPriceString.split(".")[0] + "." + sellPriceString.split(".")[1].substring(0, 2);
+        NewOrder sellOrder = new NewOrder(pair, OrderSide.SELL, OrderType.LIMIT, TimeInForce.GTC, buyTrade.getQty(), sellPriceString);
+
+    }
+
+    public void cancelAllAndSellAtMarketPrice(BinanceApiRestClient client, String pair, String asset) {
+        for (Order o : client.getOpenOrders(new OrderRequest(pair)).stream().filter(or -> or.getSide().equals(OrderSide.SELL)).collect(Collectors.toList())) {
+            client.cancelOrder(new CancelOrderRequest(pair, o.getOrderId()));
+        }
+        String availableAssetString = client.getAccount().getBalances().stream().filter(b -> b.getAsset().equals(asset)).findFirst().get().getFree();
+        availableAssetString = availableAssetString.split(".")[0] + "." + availableAssetString.split(".")[1].substring(0, 2);
+        NewOrder order = new NewOrder(pair, OrderSide.SELL, OrderType.MARKET, TimeInForce.GTC, availableAssetString);
+        try {
+            Thread.sleep(1000);
+        } catch (Exception e) {
+
+        }
+//        Trade buyTrade = getLastTrade(client, pair);
+//        Double soldAtPrice = Double.parseDouble(buyTrade.getPrice());
+//        Double sellPrice = soldAtPrice * (1d + profitPercent);
+//        String sellPriceString = ("" + sellPrice).substring(0, 6);
+//        NewOrder sellOrder = new NewOrder(pair, OrderSide.SELL, OrderType.LIMIT, TimeInForce.GTC, buyTrade.getQty(), sellPriceString);
+
+    }
+
     public NewOrderResponse sellCurrencyAtMarketPrice(BinanceApiRestClient client, String pair, String quantity) {
         NewOrder order = new NewOrder(pair, OrderSide.BUY, OrderType.MARKET, TimeInForce.GTC, quantity);
         return client.newOrder(order);
@@ -76,8 +118,8 @@ public class TradeService {
         return client.getOpenOrders(new OrderRequest(pair)).stream().map(o -> o.toString()).collect(Collectors.joining("\n"));
     }
 
-    public void checkIfCanTrade(BinanceApiRestClient client, String pair, String asset, Double stopLossLimit, Double takeProfitLimit, Double buyQuantityUSDT, CandlestickInterval customInterval) {
-        List<MyCandlestick> candles = getCandles(client, pair,customInterval);
+    public void checkIfCanTrade(BinanceApiRestClient client, String pair, String asset, Double stopLossLimit, Double takeProfitLimit, Double buyQuantityUSDT, CandlestickInterval customInterval, boolean debug) {
+        List<MyCandlestick> candles = getCandles(client, pair,customInterval, debug);
         TradeEntity openBuyTrade = tradeRepository.getNewestOpenTrade(pair);
         Double currentPrice = Double.valueOf(client.getPrice(pair).getPrice());
         TradeDecision tradeDecision = determineOrderType(candles);
@@ -168,20 +210,20 @@ public class TradeService {
 
     }
 
-    public List<MyCandlestick> getCandles(BinanceApiRestClient client, String pair, CandlestickInterval customInterval) {
-        return getCandles(client, pair, customInterval, null, null);
+    public List<MyCandlestick> getCandles(BinanceApiRestClient client, String pair, CandlestickInterval customInterval, boolean debug) {
+        return getCandles(client, pair, customInterval, null, null, debug);
     }
 
 
-    public List<MyCandlestick> getCandles(BinanceApiRestClient client, String customPair, CandlestickInterval customInterval, Long startEpoch, Long endEpoch) {
+    public List<MyCandlestick> getCandles(BinanceApiRestClient client, String customPair, CandlestickInterval customInterval, Long startEpoch, Long endEpoch, boolean debug) {
         List<MyCandlestick> candlesticks = new ArrayList<>();
         if (startEpoch == null || endEpoch == null) {
             candlesticks.addAll(client.getCandlestickBars(customPair, customInterval, 1000, (new Date()).getTime() - fifteenHoursMillis, (new Date()).getTime()).stream().map(c -> new MyCandlestick(c, customInterval)).collect(Collectors.toList()));
-            System.out.println("Default size: " + candlesticks.size());
+            if (debug) System.out.println("Default size: " + candlesticks.size());
         } else {
             long fifteenHoursMultiple = (endEpoch - startEpoch) / fifteenHoursMillis;
             long fifteenHoursRest = (endEpoch - startEpoch) % fifteenHoursMillis;
-            System.out.println("[" + startEpoch + "->" + endEpoch + "] Multiple=" + fifteenHoursMultiple + " Rest=" + fifteenHoursRest);
+            if (debug) System.out.println("[" + startEpoch + "->" + endEpoch + "] Multiple=" + fifteenHoursMultiple + " Rest=" + fifteenHoursRest);
             if (fifteenHoursMultiple > 0) {
                 for (int i = 0; i <= fifteenHoursMultiple; i++) {
                     long start = startEpoch + i * fifteenHoursMillis;
@@ -192,20 +234,20 @@ public class TradeService {
                         end += fifteenHoursRest;
                     }
                     List<MyCandlestick> part = client.getCandlestickBars(customPair, customInterval, 1000, start, end).stream().map(c -> new MyCandlestick(c, customInterval)).collect(Collectors.toList());
-                    System.out.println("Part size: " + part.size() + " " + start + " -> " + end);
+                    if (debug) System.out.println("Part size: " + part.size() + " " + start + " -> " + end);
                     candlesticks.addAll(part);
                 }
             } else {
                 List<MyCandlestick> part = client.getCandlestickBars(customPair, customInterval, 1000, startEpoch, endEpoch).stream().map(c -> new MyCandlestick(c, customInterval)).collect(Collectors.toList());
                 candlesticks.addAll(part);
-                System.out.println("Direct size: " + part.size());
+                if (debug) System.out.println("Direct size: " + part.size());
             }
         }
 
-        System.out.println("Candlesticks size: " + candlesticks.size());
-        System.out.println("Candlesticks size in hours: " + (1d * candlesticks.size() / 60d));
+        if (debug) System.out.println("Candlesticks size: " + candlesticks.size());
+        if (debug) System.out.println("Candlesticks size in hours: " + (1d * candlesticks.size() / 60d));
         List<MyCandlestick> emaCandlesticks = calculateEMA(candlesticks, emaPeriod);
-        List<MyCandlestick> populatedCandlesticks = calculateMacdAndSignal(emaCandlesticks, macdPeriod1, macdPeriod2, signalPeriod);
+        List<MyCandlestick> populatedCandlesticks = calculateRSAndRSI(calculateMacdAndSignal(emaCandlesticks, macdPeriod1, macdPeriod2, signalPeriod), rsiPeriod);
         return populatedCandlesticks;
     }
 
@@ -284,6 +326,56 @@ public class TradeService {
         return macdAndSignalLine;
     }
 
+    public List<MyCandlestick> calculateRSAndRSI(List<MyCandlestick> candlesticksWithEMA, int period) {
+        if (period  >= candlesticksWithEMA.size()) {
+            return new ArrayList<>();
+        }
+
+        List<MyCandlestick> candlesWithRSI = new ArrayList<>();
+        AvgQueue avgGain = new AvgQueue(period);
+        AvgQueue avgLoss = new AvgQueue(period);
+
+        for (int i = 1; i < candlesticksWithEMA.size(); i++) {
+            MyCandlestick currentCandlestick = candlesticksWithEMA.get(i);
+            MyCandlestick prevCandlestick = candlesticksWithEMA.get(i-1);
+            Double priceDiff = currentCandlestick.getClose() - prevCandlestick.getClose();
+
+            if (priceDiff > 0) {
+                avgGain.add(priceDiff);
+                avgLoss.add(0);
+            } else {
+                avgLoss.add((-1d) * priceDiff);
+                avgGain.add(0);
+            }
+
+
+            if (i >= period) {
+//                double auxAvgGain = 0d;
+//                double auxAvgLoss = 0d;
+//                for (int j = i; j > i - period; j--) {
+//                    double auxPriceDiff = candlesticksWithEMA.get(j).getClose() - candlesticksWithEMA.get(j-1).getClose();
+//                    if (auxPriceDiff > 0) {
+//                        auxAvgGain += auxPriceDiff;
+//                        auxAvgGain += auxPriceDiff;
+//                    } else {
+//                        auxAvgLoss -= auxPriceDiff;
+//                    }
+//                }
+//                auxAvgGain = auxAvgGain / period;
+//                auxAvgLoss = auxAvgLoss / period;
+                MyCandlestick newCandlestick = currentCandlestick.clone();
+                newCandlestick.setRs(avgGain.getAverage() / avgLoss.getAverage());
+//                newCandlestick.setRs(auxAvgGain / auxAvgLoss);
+                newCandlestick.setRsi(100d - (100d / (1d + newCandlestick.getRs())));
+                candlesWithRSI.add(newCandlestick);
+                System.out.print("[" + currentCandlestick.getOpenTime() + "] ClosePrice: " + currentCandlestick.getClose() + " diff = " + priceDiff + " avgGain = " + avgGain.getAverage() + " avgLoss = " + avgLoss.getAverage());
+                System.out.println(" RS: " + newCandlestick.getRs() + " RSI: " + newCandlestick.getRsi());
+            }
+        }
+
+        return candlesWithRSI;
+    }
+
     public TradeDecision determineOrderType(List<MyCandlestick> candles) {
         TradeDecision decision = null;
         MyCandlestick lastCandle = candles.get(candles.size() - 1);
@@ -307,6 +399,26 @@ public class TradeService {
         return decision;
     }
 
+    public TradeDecision determineOrderTypeBasedOnMACD(List<MyCandlestick> candles) {
+        TradeDecision decision = null;
+        MyCandlestick lastCandle = candles.get(candles.size() - 1);
+        MyCandlestick secondToLastCandle = candles.get(candles.size() - 2);
+        MyCandlestick thirdToLastCandle = candles.get(candles.size() - 3);
+
+        if ((lastCandle.getMacd() < lastCandle.getSignal()) && (secondToLastCandle.getMacd() < secondToLastCandle.getSignal()) && (thirdToLastCandle.getMacd() < thirdToLastCandle.getSignal()) &&
+                lastCandle.getMacd() > secondToLastCandle.getMacd() && secondToLastCandle.getMacd() > thirdToLastCandle.getMacd()) {
+            decision = TradeDecision.BUY;
+        } else if ((lastCandle.getMacd() > lastCandle.getSignal()) && (secondToLastCandle.getMacd() > secondToLastCandle.getSignal()) && (thirdToLastCandle.getMacd() > thirdToLastCandle.getSignal()) &&
+                lastCandle.getMacd() < secondToLastCandle.getMacd()) {
+            decision = TradeDecision.SELL;
+        } else {
+            decision = TradeDecision.WAIT;
+        }
+
+
+        return decision;
+    }
+
     public double backTest(List<MyCandlestick> candles, double customProfitLimit, double customStopLossLimit, double customInitialSum, double customBuySum, boolean show, String currency) {
         boolean withSum = false;
 //        double initialUSDTBalance = 1000d;
@@ -321,10 +433,10 @@ public class TradeService {
         double totalProfit = 0d;
         double totalTradeTax = 0d;
         for (int i = 2; i < candles.size(); i++) {
-            TradeDecision decision = determineOrderType(Arrays.asList(candles.get(i - 2), candles.get(i - 1), candles.get(i)));
+            TradeDecision decision = determineOrderTypeBasedOnMACD(Arrays.asList(candles.get(i - 2), candles.get(i - 1), candles.get(i)));
 
 
-            if (show && decision.equals(TradeDecision.BUY)) System.out.println();
+//            if (show && decision.equals(TradeDecision.BUY)) System.out.println();
 //            if (!decision.equals(TradeDecision.WAIT)) System.out.println("[" + decision + "] " + candles.get(i).getOpenTime()/* + " [" + candles.get(i - 2) + " "+ candles.get(i - 1) + " " + candles.get(i) + "]"*/);
             double currentPrice = (candles.get(i).getClose() + candles.get(i).getHigh() + candles.get(i).getClose()) / 3;
 
@@ -336,8 +448,7 @@ public class TradeService {
                     totalTradeTax += sellTax;
                     USDTBalance += soldFor;
                     USDTBalance -= sellTax;
-                    if (show)
-                        System.out.print("[SELL] [" + candles.get(i).getOpenTime() + "] " + EGLDBalance + " " + currency + " at " + currentPrice + " USDT for " + soldFor + " [" + USDTBalance + " USDT  " + EGLDBalance + " " + currency + "] ");
+                    if (show) System.out.print("[SELL] [" + candles.get(i).getOpenTime() + "] " + EGLDBalance + " " + currency + " at " + currentPrice + " USDT for " + soldFor + " [" + USDTBalance + " USDT  " + EGLDBalance + " " + currency + "] ");
                     double priceDiffPercent = (currentPrice - buyPrice) / buyPrice * 100;
                     totalPricediffPercent += priceDiffPercent;
                     if (show) System.out.print("[accumulated tax = " + totalTradeTax + " USDT] ");
@@ -362,8 +473,7 @@ public class TradeService {
                     totalTradeTax += buyTax;
                     USDTBalance -= buySum;
                     USDTBalance -= buyTax;
-                    if (show)
-                        System.out.print("[BUY] [" + candles.get(i).getOpenTime() + "] " + boughtEGLD + " "+ currency + " at " + currentPrice + " USDT for " + buySum + " [" + USDTBalance + " USDT  " + EGLDBalance + " "+ currency + "] ");
+                    if (show) System.out.print("[BUY] [" + candles.get(i).getOpenTime() + "] " + boughtEGLD + " "+ currency + " at " + currentPrice + " USDT for " + buySum + " [" + USDTBalance + " USDT  " + EGLDBalance + " "+ currency + "] ");
                     if (show) System.out.println("[accumulated tax = " + totalTradeTax + " USDT]");
                     openOrder = true;
                 }
@@ -377,8 +487,7 @@ public class TradeService {
 //        System.out.println("Percentage profit: " + ((totalProfit - totalTradeTax) / initialUSDTBalance) * 100 + " USDT");
         double percentProfit = (((totalProfit - totalTradeTax) / customInitialSum) * 100);
 
-        if (show)
-            System.out.println("[StopLoss=" + customStopLossLimit + "% ProfitLimit=" + customProfitLimit + "%] [ BUYSUM = " + customBuySum + " ] [ " + win + " WIN  " + lose + " LOSE ] [ " + percentProfit + "% PROFIT ]");
+        if (show) System.out.println("[StopLoss=" + customStopLossLimit + "% ProfitLimit=" + customProfitLimit + "%] [ BUYSUM = " + customBuySum + " ] [ " + win + " WIN  " + lose + " LOSE ] [ " + percentProfit + "% PROFIT ]");
         return percentProfit;
     }
 
@@ -404,7 +513,7 @@ public class TradeService {
                          Double customStopLossLimit, Double customTakeProfitLimit,
                          Double initialSum, Double customBuySum,
                          String customPair, String customIntervalString,
-                         String currency, Boolean show) {
+                         String currency, Boolean show, boolean debug) {
         double bestPercentProfit = -100d;
         double bestSL = 0d;
         double bestPL = 0d;
@@ -433,7 +542,9 @@ public class TradeService {
         long weekMillis = 1000 * 60 * 60 * 24 * 7;
         long dayMillis = 1000 * 60 * 60 * 24;
         long hourMillis = 1000 * 60 * 60;
-        List<MyCandlestick> candles = getCandles(client, customPair, CandlestickInterval.valueOf(customIntervalString), (new Date()).getTime() - hourMillis * hours, (new Date()).getTime());
+        List<MyCandlestick> candles = getCandles(client, customPair, CandlestickInterval.valueOf(customIntervalString), (new Date()).getTime() - hourMillis * hours, (new Date()).getTime(), debug);
+//        System.out.println(candles.stream().map(c -> "[" + c.getOpenTime() + "] RS: " + c.getRs() + " RSI: " + c.getRsi()).collect(Collectors.joining("\n")));
+
 //        List<MyCandlestick> candles = tradeService.getCandles(connectionManager.getClient());
 
         if (simple) {
@@ -496,7 +607,7 @@ public class TradeService {
 
     public void findBestPair(BinanceApiRestClient client, Boolean simple, Integer hours,
                              Double customStopLossLimit, Double customTakeProfitLimit,
-                             Double initialSum, Double customBuySum, String customIntervalString) {
+                             Double initialSum, Double customBuySum, String customIntervalString, boolean debug) {
         List<Pair<String, String>> pairList = client.getAllPrices().stream()
                 .filter(tp -> tp.getSymbol().endsWith("USDT"))
                 .map(tp -> Pair.of(tp.getSymbol(), tp.getSymbol().substring(0, tp.getSymbol().length() - 4))).collect(Collectors.toList());
@@ -508,7 +619,7 @@ public class TradeService {
         List<Pair<Pair<String, String>, Double>> results = new ArrayList<>();
         for (Pair<String, String> pair : pairList) {
             double profitPercent = backTest(client, simple, hours, customStopLossLimit, customTakeProfitLimit, initialSum,
-                    customBuySum, pair.getFirst(), customIntervalString, pair.getSecond(), false);
+                    customBuySum, pair.getFirst(), customIntervalString, pair.getSecond(), false, debug);
             Pair<Pair<String, String>, Double> current = Pair.of(pair, profitPercent);
             results.add(current);
             if (profitPercent > bestPair.getSecond()) {
@@ -518,13 +629,13 @@ public class TradeService {
             }
         }
 
-        Collections.sort(results, (o1, o2) -> (int)(1000* o1.getSecond() - 1000* o2.getSecond()));
+        Collections.sort(results, (o1, o2) -> (int)(1000* o2.getSecond() - 1000* o1.getSecond()));
         System.out.println();
         System.out.println("1st place: " + bestPair);
         System.out.println("2nd place: " + secondBestPair);
         System.out.println("3rd place: " + thirdBestPair);
         System.out.println();
-        for(int i = 0; i < 10; i++) {
+        for(int i = 0; i < 50; i++) {
             System.out.println(results.get(i));
         }
     }

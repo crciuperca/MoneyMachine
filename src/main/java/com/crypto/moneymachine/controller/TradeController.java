@@ -6,6 +6,9 @@ import com.crypto.moneymachine.pojo.CurrentBalance;
 import com.crypto.moneymachine.pojo.MyCandlestick;
 import com.crypto.moneymachine.service.BalancesService;
 import com.crypto.moneymachine.service.TradeService;
+import com.crypto.moneymachine.util.AvgQueue;
+import lombok.AllArgsConstructor;
+import lombok.NoArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,6 +22,8 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/trade")
+@AllArgsConstructor
+@NoArgsConstructor
 public class TradeController {
 
     @Autowired
@@ -46,18 +51,29 @@ public class TradeController {
                          @RequestParam Double customStopLossLimit, @RequestParam Double customTakeProfitLimit,
                          @RequestParam Double initialSum, @RequestParam Double customBuySum,
                          @RequestParam String customPair, @RequestParam String customIntervalString,
-                         @RequestParam String currency) {
+                         @RequestParam String currency, @RequestParam Boolean debug) {
         tradeService.backTest(connectionManager.getClient(), simple, hours, customStopLossLimit, customTakeProfitLimit,
-                initialSum, customBuySum, customPair, customIntervalString, currency, true);
+                initialSum, customBuySum, customPair, customIntervalString, currency, true, debug);
     }
 
     @GetMapping("/findBestPair")
     public void findBestPair(@RequestParam Boolean simple, @RequestParam Integer hours,
                          @RequestParam Double customStopLossLimit, @RequestParam Double customTakeProfitLimit,
                          @RequestParam Double initialSum, @RequestParam Double customBuySum,
-                         @RequestParam String customIntervalString) {
+                         @RequestParam String customIntervalString, @RequestParam Boolean debug) {
         tradeService.findBestPair(connectionManager.getClient(), simple, hours, customStopLossLimit, customTakeProfitLimit,
-                initialSum, customBuySum, customIntervalString);
+                initialSum, customBuySum, customIntervalString, debug);
+    }
+
+
+    @GetMapping("/buyMaxAtMarketPriceAndSell")
+    public void buyAndSell(@RequestParam String pair) {
+        tradeService.buyMaxCurrencyAtMarketPriceAndSellAtProfit(connectionManager.getClient(), pair, 0.005d);
+    }
+
+    @GetMapping("/sellMaxAtMarketPrice")
+    public void cancelAllAndSellAtMarketPrice(@RequestParam String asset, @RequestParam String pair) {
+        tradeService.cancelAllAndSellAtMarketPrice(connectionManager.getClient(), pair, asset);
     }
 //
 //    @GetMapping("/main")

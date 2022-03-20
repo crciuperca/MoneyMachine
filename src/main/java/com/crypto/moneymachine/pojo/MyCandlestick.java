@@ -19,6 +19,8 @@ public class MyCandlestick {
     double ema;
     double macd;
     double signal;
+    double rs;
+    double rsi;
 
     public MyCandlestick() {
     }
@@ -35,7 +37,7 @@ public class MyCandlestick {
 
 
     public MyCandlestick clone() {
-        return new MyCandlestick(interval, openTime, open, close, high, low, ema, macd, signal);
+        return new MyCandlestick(interval, openTime, open, close, high, low, ema, macd, signal, rs, rsi);
     }
 
 }
